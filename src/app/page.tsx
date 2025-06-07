@@ -43,7 +43,9 @@ export default function Home() {
       },
     ]);
     setNodes([
-      { id: 1, position: { x: 100, y: 100 }, type: 'function', componentId: 0 },
+      { id: 0, position: { x: 100, y: 100 }, type: 'function', componentId: 0 },
+      { id: 1, position: { x: 350, y: 100}, type: 'storage', componentId: 0, metadata: { operation: 'Write' } },
+      { id: 2, position: { x: 100, y: 200 }, type: 'starknet', componentId: 0, metadata: { operation: 'Caller', nodeComponent: { name: 'Caller', description: 'Contract caller address' } } },
     ]);
   }, []);
 
@@ -966,6 +968,226 @@ export const BuilderView = (props: {
     position: { x: 0, y: 0 },
   });
 
+  // TODO: Ensure execution connectors are properly managed, unique, ...
+  // nodeId -> nodeId
+  const [executionConnectors, setExecutionConnectors] = useState<{ from: number; to: number }[]>([]);
+  const executionConnectorsRef = useRef(null);
+  const [buildingNewExecutionConnector, setBuildingNewExecutionConnector] = useState(false);
+  const [newExecutionConnector, setNewExecutionConnector] = useState<{ from: number; to: { position: { x: number; y: number } } } | null>(null);
+
+  const [variableConnectors, setVariableConnectors] = useState<{
+    from: { nodeId: number; outputIndex: number };
+    to: { nodeId: number; inputIndex: number };
+  }[]>([]);
+  const variableConnectorsRef = useRef(null);
+  const [buildingNewVariableConnector, setBuildingNewVariableConnector] = useState(false);
+  const [newVariableConnector, setNewVariableConnector] = useState<{
+    from: { nodeId: number; outputIndex: number };
+    to: { position: { x: number; y: number } };
+  } | null>(null);
+
+  useEffect(() => {
+    if (executionConnectorsRef.current) {
+      const ctx = (executionConnectorsRef.current as HTMLCanvasElement).getContext('2d');
+      if (ctx) {
+        ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+        executionConnectors.map((connector) => {
+          const fromNode = props.nodes.find(node => node.id === connector.from);
+          const toNode = props.nodes.find(node => node.id === connector.to);
+          if (fromNode && toNode) {
+            ctx.beginPath();
+            ctx.moveTo(fromNode.position.x + 187, fromNode.position.y + 66); // Center the node
+            ctx.lineTo(toNode.position.x + 8, toNode.position.y + 66); // Center the node
+            ctx.strokeStyle = '#ffffffd0';
+            ctx.lineWidth = 4;
+            ctx.stroke();
+          }
+        });
+        if (newExecutionConnector) {
+          const fromNode = props.nodes.find(node => node.id === newExecutionConnector.from);
+          if (fromNode) {
+            ctx.beginPath();
+            ctx.moveTo(fromNode.position.x + 187, fromNode.position.y + 66); // Center the node
+            ctx.lineTo(newExecutionConnector.to.position.x, newExecutionConnector.to.position.y); // Center the node
+            ctx.strokeStyle = '#fffffff0';
+            ctx.lineWidth = 4;
+            ctx.stroke();
+          }
+        }
+      }
+    }
+  }, [executionConnectors, props.nodes, executionConnectorsRef, newExecutionConnector]);
+
+  useEffect(() => {
+    // Add mouse listeners to handle the new execution connector
+    const handleMouseMove = (e: MouseEvent) => {
+      if (buildingNewExecutionConnector && newExecutionConnector) {
+        setNewExecutionConnector({
+          ...newExecutionConnector,
+          to: { position: { x: e.clientX, y: e.clientY } },
+        });
+      } else {
+        setNewExecutionConnector(null); // Reset if not building a new connector
+      }
+    }
+    if (buildingNewExecutionConnector && newExecutionConnector) {
+      const handleMouseUp = (e: MouseEvent) => {
+        if (newExecutionConnector) {
+          // Check if mouse is over a node
+          const toNode = props.nodes.find(node => {
+            const rect = document.querySelector(`[data-node-id="${node.id}"]`)?.getBoundingClientRect();
+            return rect && e.clientX >= rect.left && e.clientX <= rect.right &&
+                   e.clientY >= rect.top && e.clientY <= rect.bottom;
+          });
+          if (toNode) {
+            finalizeNewExecutionConnector(toNode.id);
+          } else {
+            setNewExecutionConnector(null); // Cancel the new connector
+          }
+        }
+      };
+      document.addEventListener('mousemove', handleMouseMove);
+    } else {
+      setNewExecutionConnector(null); // Reset if not building a new connector
+      document.removeEventListener('mousemove', handleMouseMove);
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+    }
+  }, [newExecutionConnector, buildingNewExecutionConnector, props.nodes]);
+
+  const createNewExecutionConnector = (fromNodeId: number) => {
+    const fromNodePosition = props.nodes.find(node => node.id === fromNodeId)?.position;
+    setNewExecutionConnector({
+      from: fromNodeId,
+      to: { position: { x: fromNodePosition ? fromNodePosition.x + 187 : 0, y: fromNodePosition ? fromNodePosition.y + 66 : 0 } },
+    });
+    setBuildingNewExecutionConnector(true);
+    /*
+    // Add mousemove event listener to the canvas to update the new connector position
+    const handleMouseMove = (e: MouseEvent) => {
+      if (newExecutionConnector) {
+        setNewExecutionConnector({
+          ...newExecutionConnector,
+          to: { position: { x: e.clientX, y: e.clientY } },
+        });
+      }
+    };
+     TODO: Cancel on mouse up unless over a node
+    const handleMouseUp = () => {
+      if (newExecutionConnector) {
+        // Create a new execution connector
+        setExecutionConnectors([...executionConnectors, { from: newExecutionConnector.from, to: props.nodes.length }]);
+        setNewExecutionConnector(null);
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+      }
+    };
+    document.addEventListener('mousemove', handleMouseMove);
+    */
+  }
+
+  const finalizeNewExecutionConnector = (toNodeId: number) => {
+    if (newExecutionConnector) {
+      // Create a new execution connector
+      setExecutionConnectors([...executionConnectors, { from: newExecutionConnector.from, to: toNodeId }]);
+      setNewExecutionConnector(null);
+      setBuildingNewExecutionConnector(false);
+    }
+  }
+
+  useEffect(() => {
+    if (variableConnectorsRef.current) {
+      const ctx = (variableConnectorsRef.current as HTMLCanvasElement).getContext('2d');
+      if (ctx) {
+        ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+        variableConnectors.map((connector) => {
+          const fromNode = props.nodes.find(node => node.id === connector.from.nodeId);
+          const toNode = props.nodes.find(node => node.id === connector.to.nodeId);
+          if (fromNode && toNode) {
+            ctx.beginPath();
+            ctx.moveTo(fromNode.position.x + 182, fromNode.position.y + 72); // Center the node
+            ctx.lineTo(toNode.position.x + 14, toNode.position.y + 92); // Center the node
+            ctx.strokeStyle = '#ffff00d0'; // TODO: Color based on type
+            ctx.lineWidth = 4;
+            ctx.stroke();
+          }
+        });
+        if (newVariableConnector) {
+          const fromNode = props.nodes.find(node => node.id === newVariableConnector.from.nodeId);
+          if (fromNode) {
+            ctx.beginPath();
+            ctx.moveTo(fromNode.position.x + 182, fromNode.position.y + 72); // Center the node
+            ctx.lineTo(newVariableConnector.to.position.x, newVariableConnector.to.position.y); // Center the node
+            ctx.strokeStyle = '#ffff00f0';
+            ctx.lineWidth = 4;
+            ctx.stroke();
+          }
+        }
+      }
+    }
+  }, [variableConnectors, props.nodes, variableConnectorsRef, newVariableConnector]);
+
+  useEffect(() => {
+    // Add mouse listeners to handle the new variable connector
+    const handleMouseMove = (e: MouseEvent) => {
+      if (buildingNewVariableConnector && newVariableConnector) {
+        setNewVariableConnector({
+          ...newVariableConnector,
+          to: { position: { x: e.clientX, y: e.clientY } },
+        });
+      } else {
+        setNewVariableConnector(null); // Reset if not building a new connector
+      }
+    }
+    if (buildingNewVariableConnector && newVariableConnector) {
+      const handleMouseUp = (e: MouseEvent) => {
+        if (newVariableConnector) {
+          // Check if mouse is over a node
+          const toNode = props.nodes.find(node => {
+            const rect = document.querySelector(`[data-node-id="${node.id}"]`)?.getBoundingClientRect();
+            return rect && e.clientX >= rect.left && e.clientX <= rect.right &&
+                   e.clientY >= rect.top && e.clientY <= rect.bottom;
+          });
+          if (toNode) {
+            finalizeNewVariableConnector(toNode.id, 0); // TODO: Get input index from node 
+          } else {
+            setNewVariableConnector(null); // Cancel the new connector
+          }
+        }
+      };
+      document.addEventListener('mousemove', handleMouseMove);
+    } else {
+      setNewVariableConnector(null); // Reset if not building a new connector
+      document.removeEventListener('mousemove', handleMouseMove);
+    }
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+    }
+  }, [newVariableConnector, buildingNewVariableConnector, props.nodes]);
+
+  const createNewVariableConnector = (fromNodeId: number, outputIndex: number) => {
+    const fromNodePosition = props.nodes.find(node => node.id === fromNodeId)?.position;
+    setNewVariableConnector({
+      from: { nodeId: fromNodeId, outputIndex },
+      to: { position: { x: fromNodePosition ? fromNodePosition.x + 187 : 0, y: fromNodePosition ? fromNodePosition.y + 66 : 0 } },
+    });
+    setBuildingNewVariableConnector(true);
+  }
+
+  const finalizeNewVariableConnector = (toNodeId: number, inputIndex: number) => {
+    if (newVariableConnector) {
+      // Create a new variable connector
+      setVariableConnectors([...variableConnectors, {
+        from: { nodeId: newVariableConnector.from.nodeId, outputIndex: newVariableConnector.from.outputIndex },
+        to: { nodeId: toNodeId, inputIndex },
+      }]);
+      setNewVariableConnector(null);
+      setBuildingNewVariableConnector(false);
+    }
+  }
+
   return (
     <div
       className="relative w-full h-full"
@@ -987,24 +1209,24 @@ export const BuilderView = (props: {
           node.type === 'function' ? props.functions[node.componentId] :
           node.type === 'storage' ? props.storage[node.componentId] :
           props.events[node.componentId]
-        } />
+        }
+          createNewExecutionConnector={createNewExecutionConnector}
+          finalizeNewExecutionConnector={finalizeNewExecutionConnector}
+          createNewVariableConnector={createNewVariableConnector}
+          finalizeNewVariableConnector={finalizeNewVariableConnector}
+        />
       ))}
-      {nodeCreationModeConfig.enabled && (
-        <div
-          className="absolute"
-          onClick={(e) => e.stopPropagation()} // Prevent click from closing the creation view
-          style={{
-            left: nodeCreationModeConfig.position.x,
-            top: nodeCreationModeConfig.position.y,
-          }}
-        >
-          <NodeCreationView />
-        </div>
-      )}
+      <canvas ref={variableConnectorsRef} className="absolute pointer-events-none"
+        width={window.innerWidth} height={window.innerHeight}
+      />
+      <canvas ref={executionConnectorsRef} className="absolute pointer-events-none"
+        width={window.innerWidth} height={window.innerHeight}
+      />
     </div>
   );
 }
 
+/*
 export const NodeCreationView = () => {
   const [nodeCreationType, setNodeCreationType] = useState<'start' | 'action' | 'decision' | null>(null);
   return (
@@ -1045,8 +1267,13 @@ export const NodeCreationView = () => {
     </div>
   );
 };
+*/
 
-export const BuilderNodeView = (props: { node: BuilderNode, nodeComponent: ContractFunctionItem | ContractStorageItem | ContractEventItem }) => {
+export const BuilderNodeView = (props: { node: BuilderNode, nodeComponent: ContractFunctionItem | ContractStorageItem | ContractEventItem,
+  createNewExecutionConnector: (fromNodeId: number) => void,
+  finalizeNewExecutionConnector: (toNodeId: number) => void,
+  createNewVariableConnector: (fromNodeId: number, outputIndex: number) => void,
+  finalizeNewVariableConnector: (toNodeId: number) => void }) => {
   const [dragging, setDragging] = useState(false);
   const [viewNode, setViewNode] = useState<BuilderNode | null>(null);
   useEffect(() => {
@@ -1121,20 +1348,55 @@ export const BuilderNodeView = (props: { node: BuilderNode, nodeComponent: Contr
       className="flex flex-col bg-[#ffffff20] border-2 border-[#ffffff30] rounded-md absolute"
       style={{ left: viewNode?.position.x, top: viewNode?.position.y }}
     >
-      {viewNode?.type === 'function' && <FunctionNodeView func={props.nodeComponent as ContractFunctionItem} />}
+      {viewNode?.type === 'function' && <FunctionNodeView func={props.nodeComponent as ContractFunctionItem}
+        createNewExecutionConnector={props.createNewExecutionConnector}
+        finalizeNewExecutionConnector={props.finalizeNewExecutionConnector}
+        nodeId={viewNode.id}
+      createNewVariableConnector={props.createNewVariableConnector}
+      finalizeNewVariableConnector={props.finalizeNewVariableConnector}
+      />}
       {viewNode?.type === 'storage' && viewNode?.metadata?.operation === 'Read' &&
 
-        <StorageReadNodeView storage={props.nodeComponent as ContractStorageItem} />
+        <StorageReadNodeView storage={props.nodeComponent as ContractStorageItem} 
+          createNewExecutionConnector={props.createNewExecutionConnector}
+          finalizeNewExecutionConnector={props.finalizeNewExecutionConnector}
+          nodeId={viewNode.id}
+          createNewVariableConnector={props.createNewVariableConnector}
+          finalizeNewVariableConnector={props.finalizeNewVariableConnector}
+        />
       }
-      {viewNode?.type === 'storage' && viewNode?.metadata?.operation === 'Write' && <StorageWriteNodeView storage={props.nodeComponent as ContractStorageItem} />}
+      {viewNode?.type === 'storage' && viewNode?.metadata?.operation === 'Write' && <StorageWriteNodeView storage={props.nodeComponent as ContractStorageItem}
+        createNewExecutionConnector={props.createNewExecutionConnector}
+        finalizeNewExecutionConnector={props.finalizeNewExecutionConnector}
+        createNewVariableConnector={props.createNewVariableConnector}
+        finalizeNewVariableConnector={props.finalizeNewVariableConnector}
+        nodeId={viewNode.id} /> }
       {viewNode?.type === 'event' && viewNode?.metadata?.operation === 'Emit' && (
-        <EventEmitNodeView event={props.nodeComponent as ContractEventItem} />
+        <EventEmitNodeView event={props.nodeComponent as ContractEventItem} 
+          createNewExecutionConnector={props.createNewExecutionConnector}
+          finalizeNewExecutionConnector={props.finalizeNewExecutionConnector}
+          createNewVariableConnector={props.createNewVariableConnector}
+          finalizeNewVariableConnector={props.finalizeNewVariableConnector}
+          nodeId={viewNode.id}
+        />
       )}
       {viewNode?.type === 'event' && viewNode?.metadata?.operation === 'Listen' && (
-        <EventListenNodeView event={props.nodeComponent as ContractEventItem} />
+        <EventListenNodeView event={props.nodeComponent as ContractEventItem} 
+          createNewExecutionConnector={props.createNewExecutionConnector}
+          finalizeNewExecutionConnector={props.finalizeNewExecutionConnector}
+          createNewVariableConnector={props.createNewVariableConnector}
+          finalizeNewVariableConnector={props.finalizeNewVariableConnector}
+          nodeId={viewNode.id}
+        />
       )}
       {viewNode?.type === 'starknet' && (
-        <StarknetNodeView node={viewNode} />
+        <StarknetNodeView node={viewNode} 
+          createNewExecutionConnector={props.createNewExecutionConnector}
+          finalizeNewExecutionConnector={props.finalizeNewExecutionConnector}
+          createNewVariableConnector={props.createNewVariableConnector}
+          finalizeNewVariableConnector={props.finalizeNewVariableConnector}
+          nodeId={viewNode.id}
+        />
       )}
 
       <div className="absolute top-0 right-0 p-[1px]">
@@ -1155,7 +1417,10 @@ export const BuilderNodeView = (props: { node: BuilderNode, nodeComponent: Contr
   );
 }
 
-export const FunctionNodeView = (props: { func: ContractFunctionItem }) => {
+export const FunctionNodeView = (props: { func: ContractFunctionItem, createNewExecutionConnector: (fromNodeId: number) => void, nodeId: number,
+  finalizeNewExecutionConnector: (toNodeId: number) => void,
+  createNewVariableConnector: (fromNodeId: number, outputIndex: number) => void,
+  finalizeNewVariableConnector: (toNodeId: number, inputIndex: number) => void }) => {
   return (
     <div className="flex flex-col bg-[#30f73060] rounded-sm p-1 w-48">
       <div className="flex flex-row items-center">
@@ -1174,6 +1439,7 @@ export const FunctionNodeView = (props: { func: ContractFunctionItem }) => {
           {props.func?.entrypoint !== 'constructor' ? (
             <div className="">
               <Image
+                onClick={() => props.finalizeNewExecutionConnector(props.nodeId)}
                 src="/icons/play.png"
                 alt="Execute Icon"
                 width={16}
@@ -1209,6 +1475,7 @@ export const FunctionNodeView = (props: { func: ContractFunctionItem }) => {
         <div className="flex flex-col w-1/2">
           <div className="flex flex-row items-center justify-end">
             <Image
+              onClick={() => props.createNewExecutionConnector(props.nodeId)}
               src="/icons/play.png"
               alt="Return Icon"
               width={16}
@@ -1224,6 +1491,7 @@ export const FunctionNodeView = (props: { func: ContractFunctionItem }) => {
                 <span className="italic text-sm truncate">{ret.name}</span>
                 <div className="w-4 h-4 rounded-full ml-1 border-2 border-[#ffffff60]"
                   style={{ backgroundColor: getTypeColor(ret.type.name) }}
+                  onClick={() => props.createNewVariableConnector(props.nodeId, index)}
                 />
               </div>
             ))}
@@ -1235,7 +1503,11 @@ export const FunctionNodeView = (props: { func: ContractFunctionItem }) => {
   );
 };
 
-export const StorageReadNodeView = (props: { storage: ContractStorageItem }) => {
+export const StorageReadNodeView = (props: { storage: ContractStorageItem,
+  createNewExecutionConnector: (fromNodeId: number) => void,
+  finalizeNewExecutionConnector: (toNodeId: number) => void, nodeId: number,
+  createNewVariableConnector: (fromNodeId: number, outputIndex: number) => void,
+  finalizeNewVariableConnector: (toNodeId: number, inputIndex: number) => void }) => {
   return (
     <div className="flex flex-col bg-[#30f7f760] rounded-sm p-1 w-48">
       <div className="flex flex-row items-center">
@@ -1254,6 +1526,7 @@ export const StorageReadNodeView = (props: { storage: ContractStorageItem }) => 
           <span className="italic text-sm truncate">{props.storage.type.name}</span>
           <div className="w-4 h-4 rounded-full ml-1 border-2 border-[#ffffff60]"
             style={{ backgroundColor: getTypeColor(props.storage.type.name) }}
+            onClick={() => props.createNewVariableConnector(props.nodeId, 0)}
           />
         </div>
       </div>
@@ -1261,7 +1534,11 @@ export const StorageReadNodeView = (props: { storage: ContractStorageItem }) => 
   );
 }
 
-export const StorageWriteNodeView = (props: { storage: ContractStorageItem }) => {
+export const StorageWriteNodeView = (props: { storage: ContractStorageItem,
+  createNewExecutionConnector: (fromNodeId: number) => void,
+  finalizeNewExecutionConnector: (toNodeId: number) => void, nodeId: number,
+  createNewVariableConnector: (fromNodeId: number, outputIndex: number) => void,
+  finalizeNewVariableConnector: (toNodeId: number, inputIndex: number) => void }) => {
   return (
     <div className="flex flex-col bg-[#30f7f760] rounded-sm p-1 w-48">
       <div className="flex flex-row items-center">
@@ -1278,6 +1555,7 @@ export const StorageWriteNodeView = (props: { storage: ContractStorageItem }) =>
       <div className="mt-2">
         <div className="flex flex-row items-center justify-between">
           <Image
+            onClick={() => props.finalizeNewExecutionConnector(props.nodeId)}
             src="/icons/play.png"
             alt="Execute Icon"
             width={16}
@@ -1285,6 +1563,7 @@ export const StorageWriteNodeView = (props: { storage: ContractStorageItem }) =>
             className="mb-1"
           />
           <Image
+            onClick={() => props.createNewExecutionConnector(props.nodeId)}
             src="/icons/play.png"
             alt="Execute Icon"
             width={16}
@@ -1295,6 +1574,7 @@ export const StorageWriteNodeView = (props: { storage: ContractStorageItem }) =>
         <div className="flex flex-row items-center mt-1">
           <div className="w-4 h-4 rounded-full mr-1 border-2 border-[#ffffff60]"
             style={{ backgroundColor: getTypeColor(props.storage.type.name) }}
+            onClick={() => props.finalizeNewVariableConnector(props.nodeId, 0)}
           />
           <span className="italic text-sm truncate">{props.storage.type.name}</span>
         </div>
@@ -1303,7 +1583,11 @@ export const StorageWriteNodeView = (props: { storage: ContractStorageItem }) =>
   );
 }
 
-export const EventEmitNodeView = (props: { event: ContractEventItem }) => {
+export const EventEmitNodeView = (props: { event: ContractEventItem,
+  createNewExecutionConnector: (fromNodeId: number) => void,
+  finalizeNewExecutionConnector: (toNodeId: number) => void, nodeId: number,
+  createNewVariableConnector: (fromNodeId: number, outputIndex: number) => void,
+  finalizeNewVariableConnector: (toNodeId: number, inputIndex: number) => void }) => {
   return (
     <div className="flex flex-col bg-[#f730f760] rounded-sm p-1 w-60">
       <div className="flex flex-row items-center">
@@ -1320,6 +1604,7 @@ export const EventEmitNodeView = (props: { event: ContractEventItem }) => {
       <div className="mt-2">
         <div className="flex flex-row items-center justify-between">
           <Image
+            onClick={() => props.finalizeNewExecutionConnector(props.nodeId)}
             src="/icons/play.png"
             alt="Execute Icon"
             width={16}
@@ -1327,6 +1612,7 @@ export const EventEmitNodeView = (props: { event: ContractEventItem }) => {
             className="mb-1"
           />
           <Image
+            onClick={() => props.createNewExecutionConnector(props.nodeId)}
             src="/icons/play.png"
             alt="Execute Icon"
             width={16}
@@ -1338,6 +1624,7 @@ export const EventEmitNodeView = (props: { event: ContractEventItem }) => {
           <div key={index} className="flex flex-row items-center mt-1">
             <div className="w-4 h-4 rounded-full mr-1 border-2 border-[#ffffff60]"
               style={{ backgroundColor: getTypeColor(key.type.name) }}
+              onClick={() => props.finalizeNewVariableConnector(props.nodeId, index)}
             />
             <span className="italic text-sm truncate">{key.name}</span>
           </div>
@@ -1346,6 +1633,7 @@ export const EventEmitNodeView = (props: { event: ContractEventItem }) => {
           <div key={index} className="flex flex-row items-center mt-1">
             <div className="w-4 h-4 rounded-full mr-1 border-2 border-[#ffffff60]"
               style={{ backgroundColor: getTypeColor(data.type.name) }}
+              onClick={() => props.finalizeNewVariableConnector(props.nodeId, index + props.event.keys.length)}
             />
             <span className="italic text-sm truncate">{data.name}</span>
           </div>
@@ -1355,7 +1643,11 @@ export const EventEmitNodeView = (props: { event: ContractEventItem }) => {
   );
 }
 
-export const EventListenNodeView = (props: { event: ContractEventItem }) => {
+export const EventListenNodeView = (props: { event: ContractEventItem,
+  createNewExecutionConnector: (fromNodeId: number) => void,
+  finalizeNewExecutionConnector: (toNodeId: number) => void, nodeId: number,
+  createNewVariableConnector: (fromNodeId: number, outputIndex: number) => void,
+  finalizeNewVariableConnector: (toNodeId: number, inputIndex: number) => void }) => {
   return (
     <div className="flex flex-col bg-[#f730f760] rounded-sm p-1 w-60">
       <div className="flex flex-row items-center">
@@ -1372,6 +1664,7 @@ export const EventListenNodeView = (props: { event: ContractEventItem }) => {
       <div className="mt-2">
         <div className="flex flex-row items-center justify-end">
           <Image
+            onClick={() => props.finalizeNewExecutionConnector(props.nodeId)}
             src="/icons/play.png"
             alt="Execute Icon"
             width={16}
@@ -1384,6 +1677,7 @@ export const EventListenNodeView = (props: { event: ContractEventItem }) => {
             <span className="italic text-sm truncate">{key.name}</span>
             <div className="w-4 h-4 rounded-full ml-1 border-2 border-[#ffffff60]"
               style={{ backgroundColor: getTypeColor(key.type.name) }}
+              onClick={() => props.createNewVariableConnector(props.nodeId, index)}
             />
           </div>
         ))}
@@ -1392,6 +1686,7 @@ export const EventListenNodeView = (props: { event: ContractEventItem }) => {
             <span className="italic text-sm truncate">{data.name}</span>
             <div className="w-4 h-4 rounded-full ml-1 border-2 border-[#ffffff60]"
               style={{ backgroundColor: getTypeColor(data.type.name) }}
+              onClick={() => props.createNewVariableConnector(props.nodeId, index + props.event.keys.length)}
             />
           </div>
         ))}
@@ -1400,7 +1695,11 @@ export const EventListenNodeView = (props: { event: ContractEventItem }) => {
   );
 }
 
-export const StarknetNodeView = (props: { node: BuilderNode }) => {
+export const StarknetNodeView = (props: { node: BuilderNode,
+  createNewExecutionConnector: (fromNodeId: number) => void,
+  finalizeNewExecutionConnector: (toNodeId: number) => void, nodeId: number,
+  createNewVariableConnector: (fromNodeId: number, outputIndex: number) => void,
+  finalizeNewVariableConnector: (toNodeId: number, inputIndex: number) => void }) => {
   return (
     <div className="flex flex-col bg-[#f7f73060] rounded-sm p-1 w-48">
       <div className="flex flex-row items-center">
@@ -1419,6 +1718,7 @@ export const StarknetNodeView = (props: { node: BuilderNode }) => {
           <span className="italic text-sm truncate">{props.node.metadata?.nodeComponent.name || 'Unnamed Node'}</span>
           <div className="w-4 h-4 rounded-full ml-1 border-2 border-[#ffffff60]"
             style={{ backgroundColor: getTypeColor(props.node.metadata?.nodeComponent.type || 'unknown') }}
+            onClick={() => props.createNewVariableConnector(props.nodeId, 0)}
           />
         </div>
       </div>
