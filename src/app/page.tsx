@@ -423,16 +423,18 @@ export const RHBMenuStarknet = (props: {
 // TODO: subtabs for Assert, Math, String, Array, Date, ...
 // These are the things I imagine we will have:
 //   Constant: true, false, null, 0, type, ...
+//   Conditional: if, else, switch, case, comparison, logical operators, ternary, ...
 //   Assert: assertEqual, assertNotEqual, assertTrue, assertFalse
 //   Math: add, subtract, multiply, divide, mod, div rem, sqrt, pow, distance, ...
 //   String: concat, split, substring, length, toUpperCase/Lower, trim, replace, filter, ...
 //   Array: push, pop, shift, unshift, slice, splice, map, filter, reduce, find, includes, ...
 //   Date: now, today, xDays, xWeeks, x<...>, formattedDate, ...
 export const RHBMenuUtilities = (props: {
-  onSelect: (operation: 'Assert' | 'Math' | 'String' | 'Array' | 'Date') => void;
+  onSelect: (operation: 'Constant' | 'Conditional' | 'Assert' | 'Math' | 'String' | 'Array' | 'Date') => void;
 }) => {
   const utilityNodes = [
     { name: "Constant", description: "Constant values" },
+    { name: "Conditional", description: "Conditional operations" },
     { name: "Assert", description: "Assertions for failures" },
     { name: "Math", description: "Mathematical operations" },
     { name: "String", description: "String manipulation" },
@@ -957,6 +959,108 @@ export const ContractEventDetails = (props: { eventItem: ContractEventItem }) =>
   );
 }
 
+export const getAssembledContractName = () => {
+  return "MyContract"; // TODO: Implement
+}
+
+export const getAssembledContractImports = (functions: ContractFunctionItem[]) => {
+  return "use starknet::{ContractAddress, get_caller_address};\n"; // TODO: Implement
+}
+
+export const getAssembledContractComponents = () => {
+  return ""; // TODO: Implement
+}
+
+export const getAssembledContractStorage = (storage: ContractStorageItem[]) => {
+  return storage.map(item => {
+    return `${item.name}: ${item.type.name}, // ${item.description || ''}`
+  }).join('\n');
+};
+
+export const getAssembledContractEventTypes = (events: ContractEventItem[]) => {
+  return events.map(event => {
+    const keys = event.keys.map(key => `#[key]\n${key.name}: ${key.type.name}`).join(', ');
+    const data = event.data.map(data => `${data.name}: ${data.type.name}`).join(', ');
+    return `
+  #[derive(Drop, starknet::Event)]
+  struct ${event.name} {
+    ${keys}
+    ${data}
+  }
+    `;
+  }).join('\n');
+}
+
+export const getAssembledContractEvents = (events: ContractEventItem[]) => {
+  return events.map(event => {
+    return `${event.name}: ${event.name}, // ${event.description || ''}`
+  }).join('\n');
+};
+
+export const getAssembledContractConstructors = (functions: ContractFunctionItem[]) => {
+  return ""; // TODO: Implement
+}
+
+export const getAssembledContractPublicFunctions = (functions: ContractFunctionItem[]) => {
+  return functions.map(func => {
+    // TODO: Handle read/write funcs
+    return `
+    fn ${func.entrypoint}(
+      ref self: ContractState,
+      ${func.parameters.map(param => `${param.name}: ${param.type.name}`).join(', ')}
+    ) -> (${func.returns.length > 0 ? func.returns.map(ret => ret.type.name).join(', ') : ''}) {
+      println!("Calling function: {}", "${func.entrypoint}");
+    }
+    `;
+  }).join('\n');
+}
+
+export const getAssembledContractPrivateFunctions = (functions: ContractFunctionItem[]) => {
+  return ""; // TODO: Implement
+}
+
+export const AssembleContract = async (
+  functions: ContractFunctionItem[],
+  storage: ContractStorageItem[],
+  events: ContractEventItem[],
+  nodes: BuilderNode[],
+  executionConnectors: { from: number; to: number }[],
+  variableConnectors: {
+    from: { nodeId: number; outputIndex: number };
+    to: { nodeId: number; inputIndex: number };
+  }[],
+) => {
+  const replacementFunctions = {
+    "__CONTRACT_NAME__": getAssembledContractName(),
+    "__CONTRACT_IMPORTS__": getAssembledContractImports(functions),
+    "__CONTRACT_COMPONENTS__": getAssembledContractComponents(),
+    "__CONTRACT_STORAGE__": getAssembledContractStorage(storage),
+    "__CONTRACT_EVENT_TYPES__": getAssembledContractEventTypes(events),
+    "__CONTRACT_EVENTS__": getAssembledContractEvents(events),
+    "__CONTRACT_CONSTRUCTOR__": getAssembledContractConstructors(functions),
+    "__CONTRACT_PUBLIC_FUNCTIONS__": getAssembledContractPublicFunctions(functions),
+    "__CONTRACT_PRIVATE_FUNCTIONS__": getAssembledContractPrivateFunctions(functions),
+  };
+  const filePath = 'templates/contract_template.cairo';
+  const contractTemplateFile = await fetch(filePath);
+  contractTemplateFile.arrayBuffer().then((buffer) => {
+    const contractTemplate = new TextDecoder("ascii").decode(buffer);
+    let assembledContract = contractTemplate;
+    for (const [key, value] of Object.entries(replacementFunctions)) {
+      assembledContract = assembledContract.replace(new RegExp(key, 'g'), value);
+    }
+    console.log("Assembled Contract:\n", assembledContract);
+  });
+  return {
+    functions,
+    storage,
+    events,
+    nodes,
+    executionConnectors,
+    variableConnectors,
+  };
+}
+
 export const BuilderView = (props: {
   functions: ContractFunctionItem[];
   storage: ContractStorageItem[];
@@ -1204,6 +1308,20 @@ export const BuilderView = (props: {
         }
       }}
     >
+      <button
+        onClick={() => AssembleContract(
+          props.functions,
+          props.storage,
+          props.events,
+          props.nodes,
+          executionConnectors,
+          variableConnectors,
+        )}
+        className="absolute top-2 left-2 p-2 bg-[#ffffff30] border-2 border-[#ffffff30] rounded-md"
+        title="Assemble Contract"
+      >
+        <p className="text-sm font-semibold">Assemble</p>
+      </button>
       {props.nodes.map((node, index) => (
         <BuilderNodeView key={index} node={node} nodeComponent={
           node.type === 'function' ? props.functions[node.componentId] :
