@@ -1,0 +1,17 @@
+{
+  "address": {
+    "color": "#ffcc00"
+  },
+  "uint256": {
+    "color": "#00ccff"
+  },
+  "bool": {
+    "color": "#ff00cc"
+  },
+  "string": {
+    "color": "#ccff00"
+  },
+  "default": {
+    "color": "#ffffff30"
+  }
+}
