@@ -25,9 +25,9 @@ type ContractBuilderContextType = {
   editEvent: (id: number, updatedEvent: ContractEventItem) => void;
   addExecConnector: (connector: BuilderConnector) => void;
   addVarConnector: (connector: BuilderConnector) => void;
-  assembleContract: () => Promise<void>;
   selectComponent: (type: string, componentId: number | null) => void;
 
+  assembleContract: () => Promise<void>;
   saveContract: () => Promise<void>;
   loadContract: () => Promise<void>;
 }
@@ -130,12 +130,16 @@ export const ContractBuilderProvider: React.FC<{ children: React.ReactNode }> = 
       const serializedFunctions = JSON.stringify(functions);
       const serializedStorage = JSON.stringify(storage);
       const serializedEvents = JSON.stringify(events);
+      const serializedExecConnectors = JSON.stringify(execConnectors);
+      const serializedVarConnectors = JSON.stringify(varConnectors);
       const contractData = {
         name: contractName,
         nodes: serializedNodes,
         functions: serializedFunctions,
         storage: serializedStorage,
         events: serializedEvents,
+        execConnectors: serializedExecConnectors,
+        varConnectors: serializedVarConnectors
       };
       console.log("Saving contract:", contractData);
       localStorage.setItem(`focbuilder.${contractName}`, JSON.stringify(contractData));
@@ -144,7 +148,7 @@ export const ContractBuilderProvider: React.FC<{ children: React.ReactNode }> = 
     } catch (error) {
       console.error("Error saving contract:", error);
     }
-  }, [nodes, contractName, functions, storage, events]);
+  }, [nodes, contractName, functions, storage, events, execConnectors, varConnectors]);
 
   const loadContract = useCallback(async () => {
     try {
@@ -155,9 +159,30 @@ export const ContractBuilderProvider: React.FC<{ children: React.ReactNode }> = 
         setFunctions(JSON.parse(contractData.functions));
         setStorage(JSON.parse(contractData.storage));
         setEvents(JSON.parse(contractData.events));
+        setExecConnectors(JSON.parse(contractData.execConnectors));
+        setVarConnectors(JSON.parse(contractData.varConnectors));
         console.log("Contract loaded successfully:", contractData);
       } else {
-        console.warn("No saved contract found with the name:", contractName);
+        console.log("No saved contract found with the name:", contractName);
+        console.log("Creating a new contract.");
+        // Default to empty contract w/ constructor
+        const newFunctions: ContractFunctionItem[] = [];
+        newFunctions.push({
+          entrypoint: 'constructor',
+          public: true,
+          readonly: false,
+          description: 'Contract constructor',
+          parameters: [],
+          returns: []
+        });
+        setFunctions(newFunctions);
+        setStorage([]);
+        setEvents([]);
+        setNodes([
+          { id: 0, position: { x: 100, y: 100 }, type: 'function', componentId: 0 },
+        ]);
+        setExecConnectors([]);
+        setVarConnectors([]);
       }
     } catch (error) {
       console.error("Error loading contract:", error);

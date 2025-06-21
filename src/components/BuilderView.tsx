@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useContractBuilder } from '../context/ContractBuilder';
+import { BuilderViewHeader } from './BuilderViewHeader';
 import { ContractComponentsView } from './ContractComponentsView';
 import { ContractComponentDetailsView } from './ContractComponentDetailsView';
 import { BuilderNodesView } from './BuilderNodesView';
@@ -230,6 +231,7 @@ export const BuilderView = () => {
         }
       }}
     >
+      <BuilderViewHeader />
       {rhbMenuOpen && (
         <BuilderRHBMenu position={rhbMenuPosition} closeMenu={() => setRhbMenuOpen(false)} />
       )}
